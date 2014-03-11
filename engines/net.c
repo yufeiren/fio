@@ -384,6 +384,42 @@ static int fio_netio_splice_out(struct thread_data *td, struct io_u *io_u)
 }
 #endif
 
+static int sendn(int fd, void *buf, size_t buflen, int flags)
+{
+	int cur = 0;
+	int left = buflen;
+	int ret;
+
+	do {
+		ret = send(fd, buf + cur, left, flags);
+		if (ret <= 0)
+			return ret;
+
+		cur += ret;
+		left -= ret;
+	} while (left > 0);
+
+	return buflen - left;
+}
+
+static int recvn(int fd, void *buf, size_t buflen, int flags)
+{
+	int cur = 0;
+	int left = buflen;
+	int ret;
+
+	do {
+		ret = recv(fd, buf + cur, left, flags);
+		if (ret <= 0)
+			return ret;
+
+		cur += ret;
+		left -= ret;
+	} while (left > 0);
+
+	return buflen - left;
+}
+
 static int fio_netio_send(struct thread_data *td, struct io_u *io_u)
 {
 	struct netio_data *nd = td->io_ops->data;
@@ -414,8 +450,12 @@ static int fio_netio_send(struct thread_data *td, struct io_u *io_u)
 			    td->o.size) && !o->pingpong)
 				flags |= MSG_MORE;
 #endif
-			ret = send(io_u->file->fd, io_u->xfer_buf,
-					io_u->xfer_buflen, flags);
+			if (!o->pingpong)
+				ret = send(io_u->file->fd, io_u->xfer_buf,
+					   io_u->xfer_buflen, flags);
+			else
+				ret = sendn(io_u->file->fd, io_u->xfer_buf,
+					    io_u->xfer_buflen, flags);
 		}
 		if (ret > 0)
 			break;
@@ -475,8 +515,13 @@ static int fio_netio_recv(struct thread_data *td, struct io_u *io_u)
 				return 0;
 			}
 		} else {
-			ret = recv(io_u->file->fd, io_u->xfer_buf,
-					io_u->xfer_buflen, flags);
+			if (!o->pingpong)
+				ret = recv(io_u->file->fd, io_u->xfer_buf,
+					   io_u->xfer_buflen, flags);
+			else
+				ret = recvn(io_u->file->fd, io_u->xfer_buf,
+					    io_u->xfer_buflen, flags);
+
 		}
 		if (ret > 0)
 			break;
